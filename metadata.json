@@ -1,0 +1,5 @@
+{
+  "name": "EduConsult AI - Smart Parent Communication",
+  "description": "An AI-powered assistant for educational consultants to analyze parent chats, manage profiles, and generate psychology-based communication strategies using Gemini 2.5.",
+  "requestFramePermissions": []
+}
