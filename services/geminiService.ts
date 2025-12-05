@@ -1,12 +1,46 @@
 
-import { GoogleGenAI, Schema, Type } from "@google/genai";
-import { ClientProfile, AnalysisResult, PackageLevel, ClientStatus, PersonalityAnalysisResult, ClientType, InputPerspective, FeedbackResult, PerformanceMetric, TargetAudienceMode, ActivityPlan, ActivityChatMessage } from "../types";
+import { ClientProfile, AnalysisResult, PersonalityAnalysisResult, InputPerspective, FeedbackResult, PerformanceMetric, TargetAudienceMode, ActivityPlan, ActivityChatMessage } from "../types";
 import { PACKAGE_DATA } from "../constants";
 
-const getGeminiClient = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) throw new Error("API Key not found");
-  return new GoogleGenAI({ apiKey });
+// Define Type constants to match Gemini API Schema without importing the SDK
+const Type = {
+  STRING: 'STRING',
+  NUMBER: 'NUMBER',
+  INTEGER: 'INTEGER',
+  BOOLEAN: 'BOOLEAN',
+  ARRAY: 'ARRAY',
+  OBJECT: 'OBJECT'
+};
+
+// Helper to call the backend proxy
+const callGeminiProxy = async (model: string, contents: any[], config: any) => {
+  const response = await fetch('/api/gemini', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      contents,
+      config
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `Request failed with status ${response.status}`);
+  }
+
+  const data = await response.json();
+  
+  // Parse REST API response structure
+  // Structure: candidates[0].content.parts[0].text
+  const candidate = data.candidates?.[0];
+  if (candidate?.content?.parts?.[0]?.text) {
+    return candidate.content.parts[0].text;
+  }
+  
+  return null;
 };
 
 export const analyzeInteraction = async (
@@ -14,10 +48,8 @@ export const analyzeInteraction = async (
   textInput: string,
   profile: ClientProfile,
   inputPerspective: InputPerspective = 'PARENT',
-  modelName: string = "gemini-2.5-flash"
+  modelName: string = "gemini-2.0-flash"
 ): Promise<AnalysisResult> => {
-  const ai = getGeminiClient();
-
   const priceListContext = JSON.stringify(PACKAGE_DATA, null, 2);
   const personalityContext = profile.personalityAnalysis 
     ? `
@@ -106,7 +138,7 @@ export const analyzeInteraction = async (
     - 语气自然、专业、绝不尴尬。
   `;
 
-  const responseSchema: Schema = {
+  const responseSchema = {
     type: Type.OBJECT,
     properties: {
       emotionalTone: { type: Type.STRING, description: "家长/学员当前的情绪状态 (或老师当前面临的问题本质)" },
@@ -185,18 +217,14 @@ export const analyzeInteraction = async (
         throw new Error("请至少提供聊天截图或文本描述");
     }
 
-    const response = await ai.models.generateContent({
-      model: modelName,
-      contents: { parts },
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: responseSchema,
-        temperature: 0.7,
-      }
+    const textResult = await callGeminiProxy(modelName, parts, {
+      responseMimeType: "application/json",
+      responseSchema: responseSchema,
+      temperature: 0.7,
     });
 
-    if (response.text) {
-      return JSON.parse(response.text) as AnalysisResult;
+    if (textResult) {
+      return JSON.parse(textResult) as AnalysisResult;
     } else {
         throw new Error("Empty response from AI");
     }
@@ -212,11 +240,9 @@ export const analyzePersonalityFromImages = async (
   chatImagesBase64: string[], 
   chatText: string,
   profile: ClientProfile,
-  modelName: string = "gemini-2.5-flash"
+  modelName: string = "gemini-2.0-flash"
 ): Promise<PersonalityAnalysisResult> => {
-  const ai = getGeminiClient();
-  
-  const isParent = profile.clientType === ClientType.PARENT;
+  const isParent = profile.clientType === '家长'; // Enum value is string
   const targetFocusInstruction = isParent 
   ? `
     **【关键核心：家长档案 - 必须以孩子为绝对中心】**:
@@ -277,7 +303,7 @@ export const analyzePersonalityFromImages = async (
     请直接返回 JSON 对象，不要包含 markdown 格式标记。
   `;
 
-  const responseSchema: Schema = {
+  const responseSchema = {
     type: Type.OBJECT,
     properties: {
       summary: { type: Type.STRING, description: "性格核心总结" },
@@ -348,18 +374,14 @@ export const analyzePersonalityFromImages = async (
         });
     });
 
-    const response = await ai.models.generateContent({
-      model: modelName,
-      contents: { parts },
-      config: {
+    const textResult = await callGeminiProxy(modelName, parts, {
         responseMimeType: "application/json",
         responseSchema: responseSchema,
         temperature: 0.7,
-      }
     });
 
-    if (response.text) {
-      return JSON.parse(response.text) as PersonalityAnalysisResult;
+    if (textResult) {
+      return JSON.parse(textResult) as PersonalityAnalysisResult;
     } else {
       throw new Error("Empty response from AI");
     }
@@ -382,12 +404,11 @@ export const generateClassFeedback = async (
     studentAgeOverride?: number,
     studentGenderOverride?: string,
     targetModeOverride?: TargetAudienceMode,
-    modelName: string = "gemini-2.5-flash"
+    modelName: string = "gemini-2.0-flash"
 ): Promise<FeedbackResult> => {
-    const ai = getGeminiClient();
     
     // Detect Identity Context
-    const profileIsAdult = profile.clientType === ClientType.ADULT_STUDENT || (profile.age && profile.age >= 18);
+    const profileIsAdult = profile.clientType === '成人学员' || (profile.age && profile.age >= 18);
     
     // Use Overrides if provided, else fallback to profile
     const name = studentNameOverride || (profileIsAdult ? profile.name : profile.childName) || '学员';
@@ -471,7 +492,7 @@ export const generateClassFeedback = async (
       生成 5 个不同风格的文案，并附带本节课的学习内容摘要。
     `;
 
-    const responseSchema: Schema = {
+    const responseSchema = {
         type: Type.OBJECT,
         properties: {
             learningContentSummary: { type: Type.STRING, description: "本节课学习内容的简要、专业概述" },
@@ -492,18 +513,14 @@ export const generateClassFeedback = async (
     };
 
     try {
-        const response = await ai.models.generateContent({
-            model: modelName,
-            contents: { parts: [{ text: systemPrompt }] },
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: responseSchema,
-                temperature: 0.75,
-            }
+        const textResult = await callGeminiProxy(modelName, [{ text: systemPrompt }], {
+            responseMimeType: "application/json",
+            responseSchema: responseSchema,
+            temperature: 0.75,
         });
 
-        if (response.text) {
-            return JSON.parse(response.text) as FeedbackResult;
+        if (textResult) {
+            return JSON.parse(textResult) as FeedbackResult;
         } else {
             throw new Error("Empty response from AI");
         }
@@ -515,39 +532,35 @@ export const generateClassFeedback = async (
 
 export const generateActivityPlan = async (
   profiles: ClientProfile[],
-  chatHistory: ActivityChatMessage[],
+  chatHistory: ActivityChatMessage[] = [],
   instructions: string,
-  modelName: string = "gemini-2.5-flash"
+  modelName: string = "gemini-2.0-flash"
 ): Promise<ActivityPlan> => {
-  const ai = getGeminiClient();
 
   const profileContext = profiles.map(p => 
-    `- ${p.name} (${p.clientType}): ${p.course}, 剩余${p.remainingLessons}课时, 关注:${p.parentFocus.join(',')}`
+      `- ${p.name} (${p.clientType}): 关注${p.parentFocus.join(',')}, 性格${p.studentPersonality.join(',')}, 学习状态${p.learningState.join(',')}`
   ).join('\n');
 
-  const historyContext = chatHistory.length > 0 
-    ? chatHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n')
-    : "无历史对话";
+  const historyContext = chatHistory.map(msg => 
+      `${msg.role === 'user' ? 'User' : 'AI'}: ${msg.content}`
+  ).join('\n');
 
   const systemPrompt = `
-    你是一位专业的教育机构活动策划师。请根据以下学员画像和要求，策划一个具体的活动方案。
+    你是一位专业的教育机构活动策划专家。
+    请根据学员画像和上下文，策划一个具体的活动方案。
+
+    **输入指令**: ${instructions}
     
-    **学员画像样本**:
-    ${profileContext.slice(0, 3000)}
-    
-    **指令/要求**: ${instructions}
-    
-    **历史上下文**:
+    **学员画像参考**:
+    ${profileContext}
+
+    **历史对话**:
     ${historyContext}
 
-    **策划要求**:
-    1. 主题鲜明，有吸引力。
-    2. 针对学员特点设计转化/续费钩子。
-    3. 提供财务估算 (建议定价、成本、利润)。
-    4. 生成SOP和话术。
+    请输出JSON格式的活动策划案，包含主题、财务预算、SOP执行步骤和话术模板。
   `;
 
-  const responseSchema: Schema = {
+  const responseSchema = {
     type: Type.OBJECT,
     properties: {
       theme: { type: Type.STRING },
@@ -564,24 +577,9 @@ export const generateActivityPlan = async (
           breakdown: {
             type: Type.OBJECT,
             properties: {
-              gifts: { 
-                  type: Type.ARRAY, 
-                  items: { 
-                      type: Type.OBJECT, 
-                      properties: { name: {type: Type.STRING}, price: {type: Type.NUMBER} },
-                      required: ["name", "price"]
-                  }
-              },
-              materials: { 
-                  type: Type.ARRAY, 
-                  items: { 
-                      type: Type.OBJECT, 
-                      properties: { name: {type: Type.STRING}, price: {type: Type.NUMBER} },
-                      required: ["name", "price"]
-                   }
-              }
-            },
-            required: ["gifts", "materials"]
+              gifts: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, price: { type: Type.NUMBER } } } },
+              materials: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, price: { type: Type.NUMBER } } } }
+            }
           }
         },
         required: ["suggestedPrice", "totalCost", "profit", "breakdown"]
@@ -612,27 +610,23 @@ export const generateActivityPlan = async (
         required: ["privateMessageTemplate"]
       }
     },
-    required: ["theme", "personaSummary", "smartStrategy", "financialAnalysis", "contentDesign", "operationalSOP", "reusableTemplates"]
+    required: ["theme", "personaSummary", "financialAnalysis", "contentDesign", "operationalSOP", "reusableTemplates"]
   };
 
   try {
-    const response = await ai.models.generateContent({
-      model: modelName,
-      contents: { parts: [{ text: systemPrompt }] },
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: responseSchema,
-        temperature: 0.7,
-      }
+    const textResult = await callGeminiProxy(modelName, [{ text: systemPrompt }], {
+      responseMimeType: "application/json",
+      responseSchema: responseSchema,
+      temperature: 0.7,
     });
 
-    if (response.text) {
-      return JSON.parse(response.text) as ActivityPlan;
+    if (textResult) {
+      return JSON.parse(textResult) as ActivityPlan;
     } else {
       throw new Error("Empty response from AI");
     }
   } catch (error) {
-    console.error("Gemini Activity Plan Error:", error);
+    console.error("Gemini Activity Plan Generation Error:", error);
     throw error;
   }
 };

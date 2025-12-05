@@ -5,7 +5,7 @@ import ProfileForm from './components/ProfileForm';
 import ProfileList from './components/ProfileList';
 import ClassFeedbackGenerator from './components/ClassFeedbackGenerator';
 import { analyzeInteraction, analyzePersonalityFromImages } from './services/geminiService';
-import { Upload, Sparkles, MessageSquare, AlertCircle, Key, RefreshCw, XCircle, Send, PlusCircle, X, CheckCircle, UserCircle, PenTool, Calendar, FileText, Copy, Brain, ClipboardCheck } from 'lucide-react';
+import { Upload, Sparkles, MessageSquare, AlertCircle, RefreshCw, XCircle, Send, PlusCircle, X, CheckCircle, UserCircle, PenTool, Calendar, FileText, Copy, Brain, ClipboardCheck } from 'lucide-react';
 
 // Mock Data
 const MOCK_PROFILES: ClientProfile[] = [
@@ -170,8 +170,6 @@ interface UploadedFile {
 }
 
 function App() {
-  const [apiKey, setApiKey] = useState<string>('');
-  const [showKeyModal, setShowKeyModal] = useState<boolean>(false);
   const [showToast, setShowToast] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   
@@ -202,25 +200,6 @@ function App() {
   // New State: Input Perspective & Active Tab
   const [inputPerspective, setInputPerspective] = useState<InputPerspective>('PARENT');
   const [activeTab, setActiveTab] = useState<AnalysisTab>('COMMUNICATION');
-
-  useEffect(() => {
-    const envKey = process.env.API_KEY;
-    if (envKey) {
-        setApiKey(envKey);
-    } else {
-        const storedKey = localStorage.getItem('GEMINI_API_KEY');
-        if (storedKey) setApiKey(storedKey);
-        else setShowKeyModal(true);
-    }
-  }, []);
-
-  const handleSaveKey = (key: string) => {
-      localStorage.setItem('GEMINI_API_KEY', key);
-      setApiKey(key);
-      setShowKeyModal(false);
-      // @ts-ignore
-      window.process = { env: { API_KEY: key } };
-  };
 
   const handleSaveData = () => {
       localStorage.setItem('EDU_CONSULT_PROFILES', JSON.stringify(profiles));
@@ -345,11 +324,6 @@ function App() {
     setIsAnalyzing(true);
     setError(null);
     try {
-        if (!process.env.API_KEY && apiKey) {
-             // @ts-ignore
-             window.process = { env: { API_KEY: apiKey } };
-        }
-
         const base64Images = uploadedFiles.filter(f => f.type === 'image').map(img => img.data.split(',')[1]);
         
         // Pass inputPerspective to service
@@ -384,7 +358,7 @@ function App() {
         handleProfileUpdate(updatedProfile);
 
     } catch (err: any) {
-        setError(err.message || "分析失败，请检查API Key或重试");
+        setError(err.message || "分析失败，请稍后重试");
     } finally {
         setIsAnalyzing(false);
     }
@@ -405,11 +379,6 @@ function App() {
   
 
   const handleAnalyzePersonality = async (images: string[], notes: string): Promise<PersonalityAnalysisResult> => {
-       if (!process.env.API_KEY && apiKey) {
-             // @ts-ignore
-             window.process = { env: { API_KEY: apiKey } };
-       }
-       
        const currentProfile = getSelectedProfile();
        if (!currentProfile) throw new Error("No profile selected");
 
@@ -449,12 +418,7 @@ function App() {
                 <p className="text-[10px] text-gray-500 font-medium">智能教务沟通助手</p>
              </div>
         </div>
-        <button 
-          onClick={() => setShowKeyModal(true)}
-          className="text-gray-400 hover:text-gray-600 transition-colors"
-        >
-          <Key size={18} />
-        </button>
+        {/* API Key Modal Removed - Handled by Backend */}
       </header>
 
       {/* Main Layout */}
@@ -759,35 +723,6 @@ function App() {
             )}
         </div>
       </div>
-
-      {/* API Key Modal */}
-      {showKeyModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
-                <h3 className="text-xl font-bold mb-2">配置 API Key</h3>
-                <p className="text-sm text-gray-500 mb-4">
-                    请输入您的 Google Gemini API Key 以启用 AI 分析功能。Key 仅保存在本地浏览器中。
-                </p>
-                <input 
-                    type="password" 
-                    placeholder="sk-..."
-                    className="w-full border border-gray-300 rounded-lg px-4 py-2 mb-4 focus:ring-2 focus:ring-blue-500 outline-none"
-                    onKeyDown={(e) => {
-                         if (e.key === 'Enter') handleSaveKey((e.target as HTMLInputElement).value)
-                    }}
-                />
-                <button 
-                    onClick={(e) => {
-                        const input = (e.currentTarget.previousElementSibling as HTMLInputElement).value;
-                        handleSaveKey(input);
-                    }}
-                    className="w-full bg-blue-600 text-white font-bold py-2 rounded-lg hover:bg-blue-700"
-                >
-                    确认保存
-                </button>
-            </div>
-        </div>
-      )}
     </div>
   );
 }
