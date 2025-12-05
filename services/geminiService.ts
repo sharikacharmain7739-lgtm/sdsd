@@ -369,7 +369,7 @@ export const analyzePersonalityFromImages = async (
   }
 };
 
-// --- New: Class Feedback Generator Service ---
+// --- Class Feedback Generator Service ---
 
 export const generateClassFeedback = async (
     profile: ClientProfile,
@@ -398,18 +398,18 @@ export const generateClassFeedback = async (
     let modeInstruction = '';
     if (targetModeOverride) {
         if (targetModeOverride === TargetAudienceMode.CHILD) {
-             modeInstruction = `**模式: 儿童/青少年 (汇报给家长)**: 反馈主体是孩子"${name}"，接收者是家长。语气要热情、详细，多夸奖孩子的具体进步，增强家长的自豪感。请使用"孩子"或"${name}"来称呼学生。`;
+             modeInstruction = `**模式: 儿童/青少年 (汇报给家长)**: 反馈主体是孩子"${name}"，接收者是家长。语气要热情、详细，多夸奖孩子的具体进步，增强家长的自豪感。`;
         } else if (targetModeOverride === TargetAudienceMode.TEEN) {
              modeInstruction = `**模式: 青少年 (成熟鼓励)**: 反馈主体是"${name}"。语气要平等、尊重，既有鼓励也要有具体的专业建议，不要太幼稚。`;
         } else {
-             modeInstruction = `**模式: 成人 (专业直接)**: 反馈主体是"${name}"(学员本人)。语气要专业、尊重、客观，指出问题时要委婉且给出解决方案，强调技能的掌握。请使用"你"来称呼。`;
+             modeInstruction = `**模式: 成人 (专业直接)**: 反馈主体是"${name}"(学员本人)。语气要专业、尊重、客观，指出问题时要委婉且给出解决方案，强调技能的掌握。`;
         }
     } else {
         // Fallback auto-detection
         if (profileIsAdult) {
-            modeInstruction = `**模式: 成人**: 这是一个成人学员。目标受众是学员本人。请直接对"你"说话，语气专业严谨。`;
+            modeInstruction = `**模式: 成人**: 这是一个成人学员。目标受众是学员本人。语气专业严谨。`;
         } else {
-            modeInstruction = `**模式: 儿童**: 这是一个孩子。目标受众是家长。请对家长说话，汇报"${name}"的表现，语气热情鼓励。`;
+            modeInstruction = `**模式: 儿童**: 这是一个孩子。目标受众是家长。语气热情鼓励。`;
         }
     }
 
@@ -428,90 +428,47 @@ export const generateClassFeedback = async (
 
     const systemPrompt = `
       角色：你是一位资深的真人教师，擅长用最自然、最接地气的方式与家长/学员沟通。
-      你非常懂心理学，但你绝不掉书袋。你写出的反馈就像微信上发给朋友的一样自然。
       
-      **核心任务**: 为学员生成课后反馈文案。
-      
-      **关键指令: 去主语化 & 结构克隆 (Strict Rules)**
-      
-      1. **严禁主语 (Absolute De-subjectification)**:
-         - **严禁**在句子开头使用 "${name}"、"你"、"他/她"、"学生"。
-         - **必须**直接以动词或描述性词语开头。
-         - ❌ 错误: "${name}今天音准控制得很好..."
-         - ✅ 正确: "今天音准控制得非常稳，特别是高音区..."
-         - ❌ 错误: "你的节奏感有进步..."
-         - ✅ 正确: "节奏感有了明显进步，颗粒感清晰..."
-         - ❌ 错误: "她这节课表现很积极..."
-         - ✅ 正确: "这节课表现非常积极，互动很多..."
+      **必须严格遵守以下规则 (违反将导致任务失败)**:
 
-      2. **像真人一样说话**: 
-         - 严禁使用 "综上所述"、"首先/其次"、"总体来说" 这种翻译腔或论文腔。
-         - 严禁死板的 "1. 音准: 良好" 这种列表格式 (除非用户提供的模板就是这样)。
-         - 请使用 **"专业口语"**: 比如 "今天音准抓得很稳" 代替 "音准表现优秀"。
-         
-      3. **性格适配 (逻辑不等于死板)**:
-         - 如果家长是 **【严谨/逻辑型】**: 他们喜欢看干货。
-           - *正确(真人味)*: "今天节奏感明显稳多了，尤其是快板那几句，颗粒感出来了。回家练琴时多开节拍器巩固一下..."
-         - 如果家长是 **【情感/鼓励型】**:
-           - *正确*: "进门就感觉自信多了，弹出来的曲子特别有感染力..."
+      1. **【绝对禁语：主语】**: 
+         - 全文**禁止**出现 "${name}"、"你"、"他"、"她"、"学生" 作为句子开头。
+         - **必须**直接以动词、形容词或名词(如"音准"、"节奏")开头。
+         - 例: 不要说 "${name}今天弹得很好"，要说 "今天弹得非常有感觉"。
+         - 例: 不要说 "你需要注意手型"，要说 "手型方面需要多留意"。
 
-      **排版与符号死命令 (Visual Structure & Emoji Cloning)**:
-      这是最重要的要求。生成的文案必须**直接可发**。
-      
-      ${previousFeedbackTemplate ? `
-      **用户给出了【上节课反馈模板】(Template Reference)**:
-      -------------
-      ${previousFeedbackTemplate}
-      -------------
-      
-      **执行要求 (全维克隆)**:
-      1. **Emoji 复用**: 必须提取并复用模板中使用的 **Emoji** (如 🎵, 🏠, ✨)。如果模板"作业"前面是 🏠，你也必须用 🏠。
-      2. **空行复刻**: 观察模板中的【空行】位置。如果模板在“作业”和“反馈”之间有空行，你生成的内容**必须也有双重换行 (\\n\\n)**。
-      3. **列表格式**: 如果模板用 "1. 2. 3."，你也用；如果用 "- "，你也用。
-      ` : `
-      **无模板时的默认排版 (必须强制双换行)**:
-      必须分段清晰，不同大板块之间必须使用 **双换行符 (\\n\\n)** 隔开，形成明显的视觉空行。
-      
-      参考结构:
-      [热情开场/今日总结]
-      
-      (这里必须是空行)
-      
-      🌈 学习内容: 
-      [内容]
-      
-      (这里必须是空行)
-      
-      🎹 课堂点评: 
-      [详细反馈内容]
-      
-      (这里必须是空行)
-      
-      🏠 课后作业: 
-      [作业内容]
-      
-      (这里必须是空行)
-      
-      [结尾鼓励]
-      `}
+      2. **【视觉克隆：模板复刻】**:
+         ${previousFeedbackTemplate ? `
+         用户提供了参考模板。你必须成为复读机，严格复制其排版和Emoji：
+         - **Emoji**: 模板里用了什么Emoji，你在对应位置必须用一模一样的。如果没有Emoji，你也不要加。
+         - **空行**: 模板里哪里有空行，你哪里就必须有空行 (使用 \\n\\n)。
+         - **列表**: 模板用 "1." 你就用 "1."，模板用 "●" 你就用 "●"。
+         - **参考模板内容**: 
+           ${previousFeedbackTemplate}
+         ` : `
+         无模板时，请使用通用的清晰排版，板块间必须空行。
+         `}
 
-      **学员具体信息**:
-      - 姓名: ${name}
-      - 年龄: ${age}岁
-      - 性别: ${gender}
-      - ${modeInstruction}
-      
+      3. **【防黏连：强制换行】**:
+         - 每一个大的板块 (如: 学习内容、课堂反馈、作业) 之间，**必须**插入一个空行 (\\n\\n)。
+         - 不要把所有字挤在一起。
+
+      4. **【真人化】**:
+         - 拒绝AI腔 (综上所述、总体而言)。
+         - 使用老师常用的口吻。
+
+      **输入信息**:
+      - 课程: ${course}
+      - 学习内容: ${learningContent}
+      - 课后作业: ${homework}
+      - 评价维度:
+      ${performanceContext}
+      - 学员: ${age}岁, ${gender}
+      ${modeInstruction}
       ${personalityContext}
       
-      **课程信息**:
-      - 课程: ${course}
-      - 本节课内容: "${learningContent}"
-      - 课后作业: "${homework}"
-      - 详细表现:
-      ${performanceContext}
-      
       **输出目标**:
-      生成 5 个不同风格的文案 (鼓励型、指导型、专业型等)，并附带本节课的学习内容摘要。
+      生成 5 个不同风格的文案，并附带本节课的学习内容摘要。
     `;
 
     const responseSchema: Schema = {
@@ -524,7 +481,7 @@ export const generateClassFeedback = async (
                 items: {
                     type: Type.OBJECT,
                     properties: {
-                        style: { type: Type.STRING, description: "风格名称 (如: 鼓励型, 指导型, 专业型, 亲切型, 严厉型)" },
+                        style: { type: Type.STRING, description: "风格名称 (如: 鼓励型, 指导型, 专业型)" },
                         content: { type: Type.STRING, description: "完整的反馈文案内容 (务必包含 \\n\\n 双换行符以确保板块间有空行，确保文字不黏连)" }
                     },
                     required: ["style", "content"]
